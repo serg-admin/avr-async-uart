@@ -23,6 +23,7 @@ ISR (USART_UDRE_vect) {
 // Прерывание - Пришел байт данных.
 ISR (USART_RX_vect) {
   if (uart_readln_callback == 0) return;
+  PORTB ^= _BV(PINB5);
   cli();
   while (UCSR0A & _BV(RXC0)) {
     unsigned char t = UDR0; // Из порта байт можно прочитать только один раз.
@@ -109,6 +110,28 @@ char uart_halfchar_to_hex(unsigned char c) {
     case 15 : return 'F';
   }
   return 0;
+}
+
+void _uart_writeHEX(unsigned char c) {
+  char r[3];
+  r[0] = uart_halfchar_to_hex((c & 0xF0) / 16);
+  r[1] = uart_halfchar_to_hex(c & 0x0F) ;
+  r[2] = 0;
+  uart_write(r);
+}
+
+void uart_writelnHEXEx(unsigned char* c, unsigned char size) {
+  char r[3];
+  unsigned char i;
+  r[0] = '0';
+  r[1] = 'x';
+  r[2] = 0;
+  uart_write(r);
+  for(i=0; i < size; i++) {
+    _uart_writeHEX(c[i]);
+    uart_write(" ");
+  }
+  uart_writeln(&r[2]);
 }
 
 void uart_writelnHEX(unsigned char c) {

@@ -15,7 +15,7 @@
 //#define BAUD 115200
 
 #define MYBDIV (FOSC / 16 / BAUD - 1)
-#define UART0_BUFER_SIZE 32
+#define UART0_BUFER_SIZE 128
 #define UART0_READ_BUFER_SIZE 32
 
 //Отправляет один байт в очередь USART. В случае если очередь занята - ждет.
@@ -28,6 +28,9 @@ void uart_write(char* s);
 void uart_writeln(char* s);
 
 void uart_async_init(void);
+
+//Выводит в порт массив байт в ввиде HEX строки - 0xXX XX XX XX.
+void uart_writelnHEXEx(unsigned char* c, unsigned char size);
 
 //Выводит в порт один байт в ввиде HEX строки - 0xXX.
 void uart_writelnHEX(unsigned char c);
