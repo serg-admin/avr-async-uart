@@ -1,7 +1,25 @@
+/*
+VER - 14-01-2016
+*/
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include "uart_async.h"
+#if defined (__AVR_ATmega8515__)
+#  define UDR0 UDR
+#  define UCSR0B UCSRB
+#  define UDRIE0 UDRIE
+#  define UCSR0A UCSRA
+#  define RXC0 RXC
+#  define TXEN0 TXEN
+#  define RXEN0 RXEN
+#  define RXCIE0 RXCIE
+#  define UCSR0C UCSRC
+#  define UCSZ01 UCSZ1
+#  define UCSZ00 UCSZ0
+#  define UDRE0 UDRE
+#endif
+
 
 unsigned char uart_buf[UART0_BUFER_SIZE];
 char uart_read_buf[UART0_READ_BUFER_SIZE];
@@ -10,8 +28,11 @@ unsigned char uart_wPos = 0; // Позиция буфера для записи 
 unsigned char uart_rPos = 0; // Позиция буфера для передачи в порт.
 void (*uart_readln_callback)(char*) = 0;
 
-
+#if defined (__AVR_ATmega128__)
+ISR (USART0_UDRE_vect) {
+#else
 ISR (USART_UDRE_vect) {
+#endif
   cli();
   if (uart_wPos != uart_rPos) {
     UDR0 = uart_buf[uart_rPos++];
@@ -21,9 +42,12 @@ ISR (USART_UDRE_vect) {
 }
 
 // Прерывание - Пришел байт данных.
+#if defined (__AVR_ATmega128__)
+ISR (USART0_RX_vect) {
+#else
 ISR (USART_RX_vect) {
+#endif
   if (uart_readln_callback == 0) return;
-  PORTB ^= _BV(PINB5);
   cli();
   while (UCSR0A & _BV(RXC0)) {
     unsigned char t = UDR0; // Из порта байт можно прочитать только один раз.
@@ -45,11 +69,20 @@ void uart_readln(void (*callback)(char*)) {
 void uart_async_init(void) {
    uart_wPos = 0;
    uart_rPos = 0;
-   // Разрешить прием, передачу через порт.
-   UCSR0B = _BV(TXEN0) | _BV(RXEN0) | _BV(RXCIE0) ;
    // Устанавливаем скорость порта.
+#if defined (__AVR_ATmega128__)   
+   UBRR0H = (unsigned char)(MYBDIV>>8);
+   UBRR0L = (unsigned char)MYBDIV;
+#elif defined (__AVR_ATmega8515__)
+   UBRRH = (unsigned char)(MYBDIV>>8);
+   UBRRL = (unsigned char)MYBDIV;
+#else
    UBRR0 = MYBDIV;
-   UCSR0C = _BV(UCSZ01) | _BV(UCSZ00);
+#endif   
+   //UCSR0C |= _BV(UCSZ01);
+   //UCSR0C |= _BV(UCSZ00);
+// Разрешить прием, передачу через порт.
+   UCSR0B = _BV(TXEN0) | _BV(RXEN0) | _BV(RXCIE0) ;
 }
 
 // Возвращает количество свободных байт в очереди USART.
@@ -76,6 +109,8 @@ void uart_putChar(char c) {
   UCSR0B |= _BV(UDRIE0);
 }
 
+
+
 // Отправляет 0 терменированную строку в очередь USART.
 void uart_write(char* s) {
   unsigned char i = 0;
@@ -86,22 +121,13 @@ void uart_write(char* s) {
 
 // Отправляет строку в очередь USART. В случае если очередь занята - ждет.
 void uart_writeln(char* s) {
-    uart_write(s);
-    uart_write("\n\r");
+  uart_write(s);
+  uart_write("\n\r");
 }
 
 char uart_halfchar_to_hex(unsigned char c) {
+  if (c < 10) return c + 48;
   switch (c) {
-    case 0 : return '0';
-    case 1 : return '1';
-    case 2 : return '2';
-    case 3 : return '3';
-    case 4 : return '4';
-    case 5 : return '5';
-    case 6 : return '6';
-    case 7 : return '7';
-    case 8 : return '8';
-    case 9 : return '9';
     case 10 : return 'A';
     case 11 : return 'B';
     case 12 : return 'C';
@@ -113,33 +139,27 @@ char uart_halfchar_to_hex(unsigned char c) {
 }
 
 void _uart_writeHEX(unsigned char c) {
-  char r[3];
-  r[0] = uart_halfchar_to_hex((c & 0xF0) / 16);
-  r[1] = uart_halfchar_to_hex(c & 0x0F) ;
-  r[2] = 0;
-  uart_write(r);
+  uart_putChar(uart_halfchar_to_hex(c >> 4));
+  uart_putChar(uart_halfchar_to_hex(c & 0x0F));
+}
+
+void _log(uint16_t code) {
+  uart_write("E-");
+  _uart_writeHEX(((unsigned char*)&code)[1]);
+  _uart_writeHEX(((unsigned char*)&code)[0]);
+  uart_writeln("");
 }
 
 void uart_writelnHEXEx(unsigned char* c, unsigned char size) {
-  char r[3];
   unsigned char i;
-  r[0] = '0';
-  r[1] = 'x';
-  r[2] = 0;
-  uart_write(r);
+  uart_write("0x");
   for(i=0; i < size; i++) {
     _uart_writeHEX(c[i]);
-    uart_write(" ");
+    uart_putChar(' ');
   }
-  uart_writeln(&r[2]);
+  uart_writeln("");
 }
 
 void uart_writelnHEX(unsigned char c) {
-  char r[5];
-  r[0] = '0';
-  r[1] = 'x';
-  r[2] = uart_halfchar_to_hex((c & 0xF0) / 16);
-  r[3] = uart_halfchar_to_hex(c & 0x0F) ;
-  r[4] = 0;
-  uart_writeln(r);
+  uart_writelnHEXEx(&c, 1);
 }
